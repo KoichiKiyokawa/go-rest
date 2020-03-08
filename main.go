@@ -2,13 +2,34 @@ package main
 
 import (
 	"fmt"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"log"
-  "net/http"
+	"net/http"
 )
 
+type Todo struct {
+  ID    uint    `json:"id"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+  Done bool `json:"done"`
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/"):]
-	fmt.Fprintf(w, "<h1>%s</h1>", title)
+	db, err := gorm.Open("sqlite3", "./db.sqlite3")
+	if err != nil {
+		log.Fatal(err)
+	}
+  db.LogMode(true)
+	defer db.Close()
+
+	db.AutoMigrate(&Todo{})
+
+	var todos []Todo
+	db.Find(&todos)
+	fmt.Printf("%v\n", todos)
+
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func main() {
