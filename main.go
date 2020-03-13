@@ -1,12 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 type Todo struct {
@@ -27,31 +29,61 @@ func connect() *gorm.DB {
 	return db
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
+func indexHandler(c echo.Context) error {
 	db := connect()
-  defer db.Close()
+	defer db.Close()
 
 	var todos []Todo
 	db.Find(&todos)
-
-	w.Header().Set("Content-Type", "application/json")
-  resp, _ := json.Marshal(todos)
-  w.Write(resp)
+	return c.JSON(http.StatusOK, todos)
 }
 
-func newHandler(w http.ResponseWriter, r *http.Request) {
+func newHandler(c echo.Context) error {
 	db := connect()
-  defer db.Close()
+	defer db.Close()
 
-	title := r.URL.Query().Get("title")
-	body := r.URL.Query().Get("body")
-	newTodo := Todo{Title: title, Body: body, Done: false}
-  db.NewRecord(newTodo)
+	newTodo := new(Todo)
+	if err := c.Bind(newTodo); err != nil {
+		return err
+	}
+	db.NewRecord(newTodo)
 	db.Create(&newTodo)
+	return c.JSON(http.StatusOK, newTodo)
+}
+
+func toggleHandler(c echo.Context) error {
+	db := connect()
+	defer db.Close()
+
+	id, _ := strconv.Atoi(c.Param("id"))
+	todo := Todo{ID: uint(id)}
+	db.First(&todo)
+	todo.Done = !todo.Done
+	db.Save(&todo)
+	return c.NoContent(http.StatusOK)
+}
+
+func deleteHandler(c echo.Context) error {
+	db := connect()
+	defer db.Close()
+
+	id, _ := strconv.Atoi(c.Param(("id")))
+	deleteTodo := Todo{ID: uint(id)}
+	db.Delete(&deleteTodo)
+	return c.NoContent(http.StatusOK)
 }
 
 func main() {
-  http.HandleFunc("/new",newHandler)
-	http.HandleFunc("/", indexHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	e := echo.New()
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{"GET", "PUT", "POST", "DELETE"},
+	}))
+
+	// Routing
+	e.GET("/todos", indexHandler)
+	e.POST("/todos/new", newHandler)
+	e.PUT("/todos/:id/toggle", toggleHandler)
+	e.DELETE("/todos/:id", deleteHandler)
+	e.Logger.Fatal(e.Start(":8080"))
 }
